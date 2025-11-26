@@ -12,20 +12,19 @@ class Tiro(pygame.sprite.Sprite):
 
     def update(self):
         self.rect.x += self.velocidade
-
         if self.rect.x > 3000 or self.rect.x < -1000: 
             self.kill()
             
     def desenhar(self, tela, deslocamento_x):
-
         tela.blit(self.image, (self.rect.x - deslocamento_x, self.rect.y))
 
 class Player(pygame.sprite.Sprite):
     def __init__(self, x, y, personagem_escolhido="char_a"):
+        super().__init__()
         self.velocidade = 5
         self.gravidade = 0.8
         self.forca_pulo = -15
-        self.no_chao = False
+        self.no_chao_flag = False
         self.vida_max = 100
         self.vida = 100
         self.municao_max = 25
@@ -34,17 +33,16 @@ class Player(pygame.sprite.Sprite):
         self.invulneravel = False
         self.tempo_invulneravel = 0
         self.direcao = 1
- 
+
         if personagem_escolhido == "char_b":
-            nome_arquivo = "Personagemmenina.png" 
-            cor_padrao = (255, 105, 180) 
+            nome_arquivo = "Personagemmenina.png"
+            cor_padrao = (255, 105, 180)
         else:
-            nome_arquivo = "Personagemmenino.png" 
-            cor_padrao = (0, 255, 0) 
+            nome_arquivo = "Personagemmenino.png"
+            cor_padrao = (0, 255, 0)
         
         caminho_imagem = os.path.join("assets", nome_arquivo)
         try:
-
             self.image_original = pygame.image.load(caminho_imagem).convert_alpha()
         except:
             print(f"Aviso: Imagem '{nome_arquivo}' não encontrada. Usando cor padrão.")
@@ -59,17 +57,26 @@ class Player(pygame.sprite.Sprite):
         self.vel_y = 0
         self.tiros = pygame.sprite.Group()
 
+    def no_chao(self, plataformas):
+        self.rect.y += 1
+        for p in plataformas:
+            if self.rect.colliderect(p.rect):
+                self.rect.y -= 1
+                return True
+        self.rect.y -= 1
+        return False
+
     def aplicar_gravidade(self, plataformas):
         self.vel_y += self.gravidade
         self.rect.y += self.vel_y
-        self.no_chao = False
+        self.no_chao_flag = False
 
         for plataforma in plataformas:
             if self.rect.colliderect(plataforma.rect):
                 if self.vel_y > 0:
                     self.rect.bottom = plataforma.rect.top
                     self.vel_y = 0
-                    self.no_chao = True
+                    self.no_chao_flag = True
                 elif self.vel_y < 0:
                     self.rect.top = plataforma.rect.bottom
                     self.vel_y = 0
@@ -77,27 +84,27 @@ class Player(pygame.sprite.Sprite):
         if self.rect.bottom >= 500:
             self.rect.bottom = 500
             self.vel_y = 0
-            self.no_chao = True
+            self.no_chao_flag = True
 
     def mover(self, teclas):
-        if teclas[pygame.K_a]: # Usando A e D para movimento lateral
+
+        if teclas[pygame.K_LEFT]:
             self.rect.x -= self.velocidade
             self.direcao = -1
             self.image = pygame.transform.flip(self.image_original, True, False)
-        elif teclas[pygame.K_d]:
+        elif teclas[pygame.K_RIGHT]:
             self.rect.x += self.velocidade
             self.direcao = 1
             self.image = self.image_original.copy()
-        
-        # Pulo
-        if teclas[pygame.K_SPACE] and self.no_chao:
+
+        if teclas[pygame.K_UP] and self.no_chao_flag:
             self.vel_y = self.forca_pulo
-            self.no_chao = False
+            self.no_chao_flag = False
 
     def atirar(self):
         if self.municao > 0 and self.tempo_recarga == 0:
             offset = 40 * self.direcao
-            tiro = Tiro(self.rect.centerx + offset, self.rect.centery, self.direcao) 
+            tiro = Tiro(self.rect.centerx + offset, self.rect.centery, self.direcao)
             self.tiros.add(tiro)
             self.municao -= 1
             self.tempo_recarga = 15
@@ -120,23 +127,19 @@ class Player(pygame.sprite.Sprite):
             self.tempo_invulneravel -= 1
             if self.tempo_invulneravel <= 0:
                 self.invulneravel = False
-        
-        # Atirar
-        if teclas[pygame.K_j]: # Usando 'J' para atirar
+
+        if teclas[pygame.K_SPACE]:
             self.atirar()
 
-        # Cooldown do Tiro
         if self.tempo_recarga > 0:
             self.tempo_recarga -= 1
-        
-        # Colisão de Tiros com Inimigos (Usando groupcollide para melhor performance)
+
         colisoes = pygame.sprite.groupcollide(self.tiros, inimigos_grupo, True, False)
         for tiro, inimigo_lista in colisoes.items():
             for inimigo in inimigo_lista:
                 inimigo.levar_dano(10)
 
     def desenhar(self, tela):
-        # O player é desenhado sem deslocamento X, pois o mundo se move ao seu redor
         if not self.invulneravel or self.tempo_invulneravel % 10 < 5:
             tela.blit(self.image, self.rect)
         self.desenhar_hud(tela)
@@ -148,10 +151,6 @@ class Player(pygame.sprite.Sprite):
         texto_municao = fonte.render(f"Munição: {self.municao}/{self.municao_max}", True, (0, 0, 0))
         tela.blit(texto_municao, (20, 50))
 
-
-# ----------------------------------------------------------------------
-# CLASSE INIMIGO (Mantida a mesma)
-# ----------------------------------------------------------------------
 class Inimigo(pygame.sprite.Sprite):
     def __init__(self, x, y, alcance_movimento=100):
         super().__init__()
@@ -167,13 +166,13 @@ class Inimigo(pygame.sprite.Sprite):
         self.x_final = x + alcance_movimento
         self.direcao = 1
         
-        caminho_imagem = os.path.join("assets", "Inimigo.png") # CORRIGIDO: Adiciona .png
+        caminho_imagem = os.path.join("assets", "Inimigo.png")
         try:
             self.image = pygame.image.load(caminho_imagem).convert_alpha()
             self.image = pygame.transform.scale(self.image, (50, 80))
         except:
             self.image = pygame.Surface((50, 80))
-            self.image.fill((255, 0, 0)) 
+            self.image.fill((255, 0, 0))
         
         self.rect = self.image.get_rect()
         self.rect.topleft = (x, y)
@@ -201,10 +200,9 @@ class Inimigo(pygame.sprite.Sprite):
     def levar_dano(self, dano):
         self.vida -= dano
         if self.vida <= 0:
-            self.kill() 
+            self.kill()
 
     def update(self, plataformas, player):
-        
         if self.direcao == 1:
             self.rect.x += self.velocidade
             if self.rect.right >= self.x_final:
@@ -215,7 +213,6 @@ class Inimigo(pygame.sprite.Sprite):
                 self.direcao = 1
 
         self.aplicar_gravidade(plataformas)
-        
         if self.rect.colliderect(player.rect) and not player.invulneravel:
             player.levar_dano(self.dano)
         
