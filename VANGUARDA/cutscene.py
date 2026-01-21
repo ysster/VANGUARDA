@@ -17,11 +17,11 @@ class Cutscene:
                 (largura, altura)
             ),
             pygame.transform.scale(
-                pygame.image.load("assets/cutscene/Imagem2.png").convert(),
+                pygame.image.load("assets/cutscene/Imagem3.png").convert(),
                 (largura, altura)
             ),
             pygame.transform.scale(
-                pygame.image.load("assets/cutscene/Imagem2.png").convert(),
+                pygame.image.load("assets/cutscene/Imagem4.png").convert(),
                 (largura, altura)
             )
         ]
@@ -30,7 +30,7 @@ class Cutscene:
             "Em um mundo à beira do colapso...",
             "Uma força desconhecida se aproxima.",
             "O destino de todos será decidido.",
-            "A jornada comeca agora."
+            "A JORNADA COMEÇA AGORA!"
         ]
 
         self.fonte = pygame.font.Font(None, 36)
