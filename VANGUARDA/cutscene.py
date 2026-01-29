@@ -1,6 +1,7 @@
 import pygame
 import sys
 
+
 class Cutscene:
     def __init__(self, tela, largura, altura):
         self.tela = tela
@@ -49,13 +50,39 @@ class Cutscene:
         self.overlay = pygame.Surface((largura, altura))
         self.overlay.fill((0, 0, 0))
 
+        # ========= AUDIO (1 arquivo com a narração inteira) =========
+        # Coloque um arquivo só, por exemplo:
+        # assets/audio/narracao_cutscene.ogg (recomendado) ou .mp3
+        self.audio_path = "assets/áudio/narraçãoaudio.mp3"
+
+        # Inicializa o mixer (se já tiver inicializado no seu main, não tem problema)
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+
+        self.narracao_iniciada = False
+        self.narracao = None
+
+        try:
+            self.narracao = pygame.mixer.Sound(self.audio_path)
+        except pygame.error as e:
+            print(f"ERRO ao carregar áudio '{self.audio_path}': {e}")
+            self.narracao = None
+
     def executar(self):
         clock = pygame.time.Clock()
         rodando = True
 
+        # Toca a narração uma única vez quando a cutscene começar
+        if (not self.narracao_iniciada) and (self.narracao is not None):
+            self.narracao.play()
+            self.narracao_iniciada = True
+
         while rodando:
             for evento in pygame.event.get():
                 if evento.type == pygame.QUIT:
+                    # Para o áudio ao sair (opcional)
+                    if self.narracao is not None:
+                        self.narracao.stop()
                     pygame.quit()
                     sys.exit()
 
@@ -95,7 +122,11 @@ class Cutscene:
                     self.caracteres = 0.0
                     self.fade_direcao = -1
 
+                    # acabou tudo
                     if self.cena_atual >= len(self.textos):
+                        # Para o áudio quando terminar a cutscene (opcional)
+                        if self.narracao is not None:
+                            self.narracao.stop()
                         return
 
                 if self.fade_alpha <= 0 and self.fade_direcao == -1:
