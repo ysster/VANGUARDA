@@ -1,220 +1,182 @@
 import pygame
 import os
 
-class Tiro(pygame.sprite.Sprite):
-    def __init__(self, x, y, direcao=1):
-        super().__init__()
-        self.image = pygame.Surface((15, 5))
-        self.image.fill((255, 255, 0))
-        self.rect = self.image.get_rect(center=(x, y))
-        self.velocidade = 10 * direcao 
-        self.direcao = direcao
-
-    def update(self):
-        self.rect.x += self.velocidade
-        if self.rect.x > 3000 or self.rect.x < -1000: 
-            self.kill()
-            
-    def desenhar(self, tela, deslocamento_x):
-        tela.blit(self.image, (self.rect.x - deslocamento_x, self.rect.y))
 
 class Player(pygame.sprite.Sprite):
+    """
+    Player com animações via spritesheet (idle/run/jump/fall).
+    Teclas: A/D ou LEFT/RIGHT para andar | W/SPACE/UP para pular
+    """
+
+    # ===== AJUSTES RÁPIDOS (se precisar) =====
+    SPRITESHEET_PATH = os.path.join("assets/player.png")
+
+    FRAME_W = 64
+    FRAME_H = 64
+
+    # Linha do spritesheet (0 = primeira linha), e quantos frames usar
+    # Se alguma animação não bater com sua spritesheet, ajuste os ROW_... e COUNT_...
+    IDLE_ROW, IDLE_COUNT = 0, 4
+    RUN_ROW,  RUN_COUNT  = 1, 6
+    JUMP_ROW, JUMP_COUNT = 2, 1
+    FALL_ROW, FALL_COUNT = 3, 1
+
     def __init__(self, x, y, personagem_escolhido="char_a"):
         super().__init__()
+
+        # movimento/física
         self.velocidade = 5
         self.gravidade = 0.8
         self.forca_pulo = -15
-        self.no_chao_flag = False
-        self.vida_max = 100
+        self.vel_y = 0
+        self.no_chao = False
+        self.direcao = 1  # 1 direita, -1 esquerda
+
+        # vida (mantive do seu)
         self.vida = 100
-        self.municao_max = 25
-        self.municao = 25
-        self.tempo_recarga = 0
         self.invulneravel = False
         self.tempo_invulneravel = 0
-        self.direcao = 1
 
-        if personagem_escolhido == "char_b":
-            nome_arquivo = "Personagemmenina.png"
-            cor_padrao = (255, 105, 180)
-        else:
-            nome_arquivo = "Personagemmenino.png"
-            cor_padrao = (0, 255, 0)
-        
-        caminho_imagem = os.path.join("assets", nome_arquivo)
+        # animação
+        self.estado = "idle"
+        self.frame_index = 0
+        self.frame_timer = 0
+        self.frame_delay = 100  # ms (velocidade da animação)
+
+        # carrega spritesheet
+        self.sheet = self._load_sheet()
+
+        # monta animações
+        self.anim = {
+            "idle": self._get_frames(self.IDLE_ROW, self.IDLE_COUNT),
+            "run":  self._get_frames(self.RUN_ROW,  self.RUN_COUNT),
+            "jump": self._get_frames(self.JUMP_ROW, self.JUMP_COUNT),
+            "fall": self._get_frames(self.FALL_ROW, self.FALL_COUNT),
+        }
+
+        # imagem inicial
+        self.image = self.anim["idle"][0]
+        self.rect = self.image.get_rect(topleft=(x, y))
+
+        # hitbox um pouco mais “justa” (opcional)
+        # Se ficar estranho, comente essa linha
+        self.rect = pygame.Rect(self.rect.x, self.rect.y, 50, 70)
+
+    def _load_sheet(self):
         try:
-            self.image_original = pygame.image.load(caminho_imagem).convert_alpha()
-        except:
-            print(f"Aviso: Imagem '{nome_arquivo}' não encontrada. Usando cor padrão.")
-            self.image_original = pygame.Surface((50, 80))
-            self.image_original.fill(cor_padrao)
-        
-        self.image_original = pygame.transform.scale(self.image_original, (50, 80))
-        self.image = self.image_original.copy()
-        
-        self.rect = self.image.get_rect()
-        self.rect.topleft = (x, y)
-        self.vel_y = 0
-        self.tiros = pygame.sprite.Group()
+            return pygame.image.load(self.SPRITESHEET_PATH).convert_alpha()
+        except Exception:
+            # fallback (pra não crashar)
+            surf = pygame.Surface((self.FRAME_W * 8, self.FRAME_H * 8), pygame.SRCALPHA)
+            pygame.draw.rect(surf, (255, 0, 0), (0, 0, 40, 40))
+            return surf
 
-    def no_chao(self, plataformas):
-        self.rect.y += 1
+    def _get_frames(self, row, count):
+        frames = []
+        for i in range(count):
+            frame = pygame.Surface((self.FRAME_W, self.FRAME_H), pygame.SRCALPHA)
+            frame.blit(
+                self.sheet,
+                (0, 0),
+                (i * self.FRAME_W, row * self.FRAME_H, self.FRAME_W, self.FRAME_H)
+            )
+            frames.append(frame)
+        return frames
+
+    def _set_estado(self, novo):
+        if novo != self.estado:
+            self.estado = novo
+            self.frame_index = 0
+            self.frame_timer = 0
+
+    def _mover_x(self, teclas):
+        dx = 0
+
+        left = teclas[pygame.K_LEFT] or teclas[pygame.K_a]
+        right = teclas[pygame.K_RIGHT] or teclas[pygame.K_d]
+
+        if left:
+            dx = -self.velocidade
+            self.direcao = -1
+        elif right:
+            dx = self.velocidade
+            self.direcao = 1
+
+        return dx
+
+    def _pular(self, teclas):
+        jump = teclas[pygame.K_UP] or teclas[pygame.K_w] or teclas[pygame.K_SPACE]
+        if jump and self.no_chao:
+            self.vel_y = self.forca_pulo
+            self.no_chao = False
+
+    def _colisao_x(self, plataformas, dx):
+        self.rect.x += dx
         for p in plataformas:
             if self.rect.colliderect(p.rect):
-                self.rect.y -= 1
-                return True
-        self.rect.y -= 1
-        return False
+                if dx > 0:
+                    self.rect.right = p.rect.left
+                elif dx < 0:
+                    self.rect.left = p.rect.right
 
-    def aplicar_gravidade(self, plataformas):
+    def _colisao_y(self, plataformas):
         self.vel_y += self.gravidade
-        self.rect.y += self.vel_y
-        self.no_chao_flag = False
+        if self.vel_y > 20:
+            self.vel_y = 20
 
-        for plataforma in plataformas:
-            if self.rect.colliderect(plataforma.rect):
-                if self.vel_y > 0:
-                    self.rect.bottom = plataforma.rect.top
-                    self.vel_y = 0
-                    self.no_chao_flag = True
-                elif self.vel_y < 0:
-                    self.rect.top = plataforma.rect.bottom
-                    self.vel_y = 0
-
-        if self.rect.bottom >= 500:
-            self.rect.bottom = 500
-            self.vel_y = 0
-            self.no_chao_flag = True
-
-    def mover(self, teclas):
-
-        if teclas[pygame.K_LEFT]:
-            self.rect.x -= self.velocidade
-            self.direcao = -1
-            self.image = pygame.transform.flip(self.image_original, True, False)
-        elif teclas[pygame.K_RIGHT]:
-            self.rect.x += self.velocidade
-            self.direcao = 1
-            self.image = self.image_original.copy()
-
-        if teclas[pygame.K_UP] and self.no_chao_flag:
-            self.vel_y = self.forca_pulo
-            self.no_chao_flag = False
-
-    def atirar(self):
-        if self.municao > 0 and self.tempo_recarga == 0:
-            offset = 40 * self.direcao
-            tiro = Tiro(self.rect.centerx + offset, self.rect.centery, self.direcao)
-            self.tiros.add(tiro)
-            self.municao -= 1
-            self.tempo_recarga = 15
-
-    def levar_dano(self, dano):
-        if not self.invulneravel:
-            self.vida -= dano
-            self.invulneravel = True
-            self.tempo_invulneravel = 60
-            if self.vida <= 0:
-                self.vida = 0
-                print("Jogador derrotado!")
-
-    def update(self, teclas, plataformas, inimigos_grupo=pygame.sprite.Group()):
-        self.mover(teclas)
-        self.aplicar_gravidade(plataformas)
-        self.tiros.update()
-        
-        if self.invulneravel:
-            self.tempo_invulneravel -= 1
-            if self.tempo_invulneravel <= 0:
-                self.invulneravel = False
-
-        if teclas[pygame.K_SPACE]:
-            self.atirar()
-
-        if self.tempo_recarga > 0:
-            self.tempo_recarga -= 1
-
-        colisoes = pygame.sprite.groupcollide(self.tiros, inimigos_grupo, True, False)
-        for tiro, inimigo_lista in colisoes.items():
-            for inimigo in inimigo_lista:
-                inimigo.levar_dano(10)
-
-    def desenhar(self, tela):
-        if not self.invulneravel or self.tempo_invulneravel % 10 < 5:
-            tela.blit(self.image, self.rect)
-        self.desenhar_hud(tela)
-
-    def desenhar_hud(self, tela):
-        fonte = pygame.font.SysFont(None, 30)
-        pygame.draw.rect(tela, (255, 0, 0), (20, 20, 200, 20))
-        pygame.draw.rect(tela, (0, 255, 0), (20, 20, 200 * (self.vida / self.vida_max), 20))
-        texto_municao = fonte.render(f"Munição: {self.municao}/{self.municao_max}", True, (0, 0, 0))
-        tela.blit(texto_municao, (20, 50))
-
-class Inimigo(pygame.sprite.Sprite):
-    def __init__(self, x, y, alcance_movimento=100):
-        super().__init__()
-        self.vida_max = 50
-        self.vida = 50
-        self.dano = 20
-        self.velocidade = 2
-        self.gravidade = 0.8
-        self.vel_y = 0
-        self.no_chao = False
-        
-        self.x_inicial = x
-        self.x_final = x + alcance_movimento
-        self.direcao = 1
-        
-        caminho_imagem = os.path.join("assets", "Inimigo.png")
-        try:
-            self.image = pygame.image.load(caminho_imagem).convert_alpha()
-            self.image = pygame.transform.scale(self.image, (50, 80))
-        except:
-            self.image = pygame.Surface((50, 80))
-            self.image.fill((255, 0, 0))
-        
-        self.rect = self.image.get_rect()
-        self.rect.topleft = (x, y)
-
-    def aplicar_gravidade(self, plataformas):
-        self.vel_y += self.gravidade
-        self.rect.y += self.vel_y
+        self.rect.y += int(self.vel_y)
         self.no_chao = False
 
-        for plataforma in plataformas:
-            if self.rect.colliderect(plataforma.rect):
-                if self.vel_y > 0:
-                    self.rect.bottom = plataforma.rect.top
+        for p in plataformas:
+            if self.rect.colliderect(p.rect):
+                if self.vel_y > 0:  # caindo
+                    self.rect.bottom = p.rect.top
                     self.vel_y = 0
                     self.no_chao = True
-                elif self.vel_y < 0:
-                    self.rect.top = plataforma.rect.bottom
+                elif self.vel_y < 0:  # batendo cabeça
+                    self.rect.top = p.rect.bottom
                     self.vel_y = 0
 
-        if self.rect.bottom >= 500:
-            self.rect.bottom = 500
-            self.vel_y = 0
-            self.no_chao = True
-
-    def levar_dano(self, dano):
-        self.vida -= dano
-        if self.vida <= 0:
-            self.kill()
-
-    def update(self, plataformas, player):
-        if self.direcao == 1:
-            self.rect.x += self.velocidade
-            if self.rect.right >= self.x_final:
-                self.direcao = -1
+    def _atualizar_estado(self, dx):
+        if not self.no_chao:
+            if self.vel_y < 0:
+                self._set_estado("jump")
+            else:
+                self._set_estado("fall")
         else:
-            self.rect.x -= self.velocidade
-            if self.rect.left <= self.x_inicial:
-                self.direcao = 1
+            if dx != 0:
+                self._set_estado("run")
+            else:
+                self._set_estado("idle")
 
-        self.aplicar_gravidade(plataformas)
-        if self.rect.colliderect(player.rect) and not player.invulneravel:
-            player.levar_dano(self.dano)
-        
-    def desenhar(self, tela, deslocamento_x):
-        tela.blit(self.image, (self.rect.x - deslocamento_x, self.rect.y))
+    def _animar(self, dt_ms):
+        frames = self.anim[self.estado]
+
+        if len(frames) == 1:
+            self.frame_index = 0
+        else:
+            self.frame_timer += dt_ms
+            if self.frame_timer >= self.frame_delay:
+                self.frame_timer = 0
+                self.frame_index = (self.frame_index + 1) % len(frames)
+
+        img = frames[self.frame_index]
+        if self.direcao == -1:
+            img = pygame.transform.flip(img, True, False)
+
+        self.image = img
+
+    def update(self, dt_ms, teclas, plataformas):
+        dx = self._mover_x(teclas)
+        self._pular(teclas)
+
+        self._colisao_x(plataformas, dx)
+        self._colisao_y(plataformas)
+
+        self._atualizar_estado(dx)
+        self._animar(dt_ms)
+
+    def desenhar(self, tela, dx_camera):
+        # Desenha “colado” no chão pela base da hitbox
+        img_rect = self.image.get_rect(midbottom=self.rect.midbottom)
+        tela.blit(self.image, (img_rect.x - dx_camera, img_rect.y))
